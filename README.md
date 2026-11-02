@@ -148,13 +148,40 @@ python -c 'import os, tempfile; assert os.path.samefile(tempfile.gettempdir(), o
 python -m pip install --no-cache-dir --upgrade pip
 python -m pip install --no-cache-dir torch==2.11.0 --index-url https://download.pytorch.org/whl/cu126
 python -m pip install --no-cache-dir -r requirements-cluster.txt
-python -c 'import torch, openai, qlib, sb3_contrib; print("Torch:", torch.__version__)'
 python -m pip check
-python -m unittest discover -s tests -v
 )
 ```
 
 Both Slurm scripts set the same home-based temporary directory on compute nodes.
+
+After installation succeeds, activate the environment in the login shell and
+check that the separately transferred `.env` contains the key without printing it:
+
+```bash
+source ~/.venvs/alphagen/bin/activate
+python -c 'from dotenv import dotenv_values; assert dotenv_values(".env").get("OPENAI_API_KEY"), "Transfer the local .env to the cluster checkout first"; print("API key file ready")'
+```
+
+Run import and training checks inside an allocation, from the repository root.
+The observed `xlogin1` virtual-memory limit was 1 GiB and Torch failed to map
+`libtorch_cpu.so` there; the same installation imported successfully on a Titan V
+with compute-node limits. Request one task explicitly to avoid duplicated checks:
+
+```bash
+srun --ntasks=1 --gpus=1 --cpus-per-task=2 --mem=24G --time=00:10:00 --propagate=NONE bash -c '
+set -e
+source "$HOME/.venvs/alphagen/bin/activate"
+export TMPDIR="$HOME/.tmp/alphagen"
+export OMP_NUM_THREADS=2
+export MKL_NUM_THREADS=2
+python -c "import torch, openai, qlib, sb3_contrib; assert torch.cuda.is_available(); print(torch.__version__, torch.cuda.get_device_name(0)); print(torch.ones(4, device=\"cuda\").sum().item())"
+python -m pip check
+python -m unittest discover -s tests -v
+'
+```
+
+Both batch scripts also request one task and disable propagation of login-shell
+resource limits. They retain the requested 24 GB job memory limit.
 
 The CUDA 12.6 wheel is chosen for the Titan V's Volta architecture. The original
 `requirements.txt` is a broad environment freeze containing nightly CUDA 12.8
@@ -168,7 +195,7 @@ verify access in your API project before starting the GPU job. Do not silently
 substitute a different model between conditions.
 
 ```bash
-python -c "from openai import OpenAI; print(OpenAI().models.retrieve('gpt-4o-2024-11-20').id)"
+python -c "from dotenv import load_dotenv; load_dotenv('.env'); from openai import OpenAI; print(OpenAI().models.retrieve('gpt-4o-2024-11-20').id)"
 ```
 
 Before a GPU job, set `OPENAI_API_KEY` through your shell, cluster secret
