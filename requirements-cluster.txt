@@ -1,0 +1,18 @@
+# Python 3.12; install torch separately from the cu126 wheel index for Titan V.
+numpy==1.26.4
+python-dateutil==2.9.0.post0
+cvxpy==1.7.5
+pandas==2.3.3
+pyqlib==0.9.7
+stable-baselines3==2.7.1
+sb3-contrib==2.7.1
+gym==0.26.2
+shimmy==2.0.0
+openai==2.15.0
+python-dotenv==1.2.1
+tokentrim==0.1.13
+num2words==0.5.14
+dataclasses-json==0.6.7
+fire==0.7.1
+tensorboard==2.20.0
+matplotlib==3.10.8

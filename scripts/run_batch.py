@@ -19,7 +19,9 @@ def run_batch_experiments(
     llm_every_n_steps: int = 25000,
     feedback_loop: bool = False,
     feedback_iter: int = 3,
-    feedback_mode: str = "full"
+    feedback_mode: str = "full",
+    qlib_data_path: str = "~/.qlib/qlib_data/cn_data",
+    device: str = "auto"
 ):
     """
     Run experiments 10 times with different fixed random seeds and aggregate results.
@@ -36,7 +38,7 @@ def run_batch_experiments(
     :param feedback_mode: Type of feedback loop - 'full' or 'fix-only'
     """
     # Fixed random seeds for 10 runs
-    random_seeds = range(0, 8)
+    random_seeds = range(10)
     
     print(f"""[Batch Runner] Starting batch experiments
     Number of runs: {len(random_seeds)}
@@ -57,10 +59,10 @@ def run_batch_experiments(
     # Run experiment 10 times
     for i, seed in enumerate(random_seeds, 1):
         print(f"\n{'='*60}")
-        print(f"[Batch] Run {i}/10 with seed {seed}")
+        print(f"[Batch] Run {i}/{len(random_seeds)} with seed {seed}")
         print(f"{'='*60}")
         
-        run_single_experiment(
+        result = run_single_experiment(
             seed=seed,
             instruments=instruments,
             pool_capacity=pool_capacity,
@@ -71,11 +73,14 @@ def run_batch_experiments(
             drop_rl_n=drop_rl_n,
             feedback_loop=feedback_loop,
             feedback_iter=feedback_iter,
-            feedback_mode=feedback_mode
+            feedback_mode=feedback_mode,
+            qlib_data_path=qlib_data_path,
+            device=device
         )
         
-        # Extract metrics from the latest report file
-        metrics = _extract_latest_metrics(seed)
+        # Read this run's result directly; globbing can select another condition's report.
+        final = result['final_metrics']
+        metrics = {key: final[key + '_mean'] for key in ('ic_test', 'rank_ic_test', 'icir_test', 'rank_icir_test')}
         if metrics:
             results['ic_test'].append(metrics['ic_test'])
             results['rank_ic_test'].append(metrics['rank_ic_test'])
@@ -158,7 +163,7 @@ def _report_batch_statistics(results, seeds, pool_capacity, instruments, use_llm
     summary_file.parent.mkdir(parents=True, exist_ok=True)
     
     summary = {
-        'seeds': seeds,
+        'seeds': list(seeds),
         'pool_capacity': pool_capacity,
         'instruments': instruments,
         'use_llm': use_llm,

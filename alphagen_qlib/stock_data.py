@@ -1,5 +1,6 @@
 from typing import List, Union, Optional, Tuple
 from enum import IntEnum
+import os
 import numpy as np
 import pandas as pd
 import torch
@@ -21,7 +22,8 @@ _QLIB_INITIALIZED = False
 def initialize_qlib(qlib_data_path: str = _DEFAULT_QLIB_DATA_PATH) -> None:
     import qlib
     from qlib.config import REG_CN
-    qlib.init(provider_uri=qlib_data_path, region=REG_CN)
+    qlib.init(provider_uri=os.path.abspath(os.path.expanduser(qlib_data_path)), region=REG_CN,
+              kernels=int(os.environ.get("SLURM_CPUS_PER_TASK", "1")))
     global _QLIB_INITIALIZED
     _QLIB_INITIALIZED = True
 

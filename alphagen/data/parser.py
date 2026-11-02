@@ -124,7 +124,7 @@ class ExpressionParser:
             raise ExpressionParsingError("An operator name cannot be used as an operand")
         operands = cast(List[Expression], operands)
         dt_operands = operands
-        if (not self._suffix_needed and
+        if (operands and not self._suffix_needed and
                 isinstance(operands[-1], Constant) and
                 (dt := self._as_delta_time(operands[-1], noexcept=True)) is not None):
             dt_operands = operands.copy()

@@ -30,6 +30,8 @@ class FeedbackInteraction(DefaultInteraction):
 	def _chat_and_parse(self, prompt: str) -> List[Expression]:
 		"""Override to fix invalid alphas during parsing."""
 		lines = self._client.chat_complete(prompt)
+		if self.repair_engine is not None:
+			return self._process_candidates(lines, repair=self.feedback_mode != "improve-only")
 		exprs, invalid = safe_parse_list(lines.split('\n'), self._parser)
 		
 		# Track valid alphas
@@ -62,6 +64,8 @@ class FeedbackInteraction(DefaultInteraction):
 
 	def _initialize(self, pool, exprs: List[Expression]) -> None:
 		"""Override initialization to fix invalid alphas during pool creation."""
+		if self.repair_engine is not None:
+			return super()._initialize(pool, exprs)
 		if len(exprs) != 0:
 			return
 		
@@ -127,7 +131,7 @@ class FeedbackInteraction(DefaultInteraction):
 		                 "the IC performance of the set, is listed below:\n")
 		REPLACE = ("\nAccording to the result, please generate {}, not similar to the insignificant ones. "
 		           "The most insignificant alphas will be replaced with the new ones to potentially boost the performance. "
-		           "Again, one on each line without numbering, and do not output anything else.")
+		           "Again, one on each line without numbering and metrics, and do not output anything else.")
 		SIG_THRES = 1e-4
 
 		if self._forgetful:
@@ -162,7 +166,7 @@ class FeedbackInteraction(DefaultInteraction):
 				initial_alphas=exprs,
 				pool=pool,
 				test_calculators=self._calcs_test,
-				chat_session=self._client,
+				chat_session=self,
 				feedback_iter=self.feedback_iter,
 				parser=self._parser,
 				llm_alpha_stats=self._llm_alpha_stats,

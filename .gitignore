@@ -5,20 +5,8 @@ __pycache__
 playground*.ipynb
 playground*.py
 /data/
-# 1. Ignore everything in the out folder
-/out/*
-
-# 2. Allow Git to look into the results directory
-!/out/results/
-
-# 3. Ignore everything inside results (so we can pick specific subfolders)
-/out/results/*
-
-# 4. Allow Git to look into subfolders that contain "_feedback" and "_20_"
-!/out/results/*_feedback*20*/
-
-# 5. Finally, allow the specific .json files with "_rl" in the title
-!/out/results/*_feedback*20*/*_rl*.json
+# Curated summaries belong in experiments/; raw outputs stay local.
+/out/
 logs/
 tb_logs/
 get_baostock_data.ipynb
@@ -26,3 +14,6 @@ get_baostock_data.py
 /utils/
 qlib_bin.tar.gz
 results.py
+.env
+.env.*
+.venv*/

@@ -1,0 +1,19 @@
+{
+  "archive": "data/qlib_bin.tar.gz",
+  "archive_bytes": 569210863,
+  "archive_sha256": "0a2974da97b4737e503ecddeea8bb3b2179e0e16ea0fb19fa373ff14155bf315",
+  "calendar_start": "2000-01-04",
+  "calendar_end": "2026-10-23",
+  "calendar_sha256": "245bb32a907fe942c1a4c3671e35c0c5f7ecbb73b5aae90bbbc4ff7e7e83ae46",
+  "csi300_universe_sha256": "f4d05dcb2a65ca9fc8b6a6c7bf2263030f52976d793d9ab820ab6ecdae300bc3",
+  "paper_profile_symbols": 720,
+  "paper_profile_feature_files_checked": 4320,
+  "paper_profile_features_sha256": "94662e9f7a6edcea4b85cce788e0914729b33abd1217978c5059a735961a7682",
+  "postcutoff_profile_symbols": 750,
+  "postcutoff_profile_feature_files_checked": 4500,
+  "postcutoff_profile_features_sha256": "ba48a0e6ec887c3da04b865575a4d8c96822530b23c6cd022f0dc928c2c90894",
+  "postrelease_profile_symbols": 760,
+  "postrelease_profile_feature_files_checked": 4560,
+  "postrelease_profile_features_sha256": "5da34f387d1fb2e8e5c4dfc40dbfd0d444fcb815e63c6c87eb71c4d01af3187d",
+  "provenance": "Archive available locally. Source, adjustment policy and identity with the original paper snapshot have not been established."
+}

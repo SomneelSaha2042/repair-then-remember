@@ -3,7 +3,9 @@ import os
 from typing import Optional, Tuple, List, Dict, Any, Union
 from datetime import datetime
 from pathlib import Path
+from bisect import bisect_right
 from openai import OpenAI
+from dotenv import load_dotenv
 import fire
 
 import numpy as np
@@ -21,9 +23,12 @@ from alphagen.rl.env.core import AlphaEnvCore
 from alphagen_qlib.calculator import QLibStockDataCalculator
 from alphagen_qlib.stock_data import initialize_qlib
 from alphagen_llm.client import ChatClient, OpenAIClient, ChatConfig
+from alphagen_llm.client.openai_client import DEFAULT_MODEL
 from alphagen_llm.prompts.system_prompt import EXPLAIN_WITH_TEXT_DESC
 from alphagen_llm.prompts.interaction import InterativeSession, DefaultInteraction
 from alphagen_llm.prompts.feedback_interaction import FeedbackInteraction
+from alphagen_llm.repair_memory import RepairEngine, build_parser as repair_parser
+from scripts.check_data import PROFILES
 
 from alphagen_llm.feedback import (
     compute_alpha_metrics,
@@ -57,22 +62,15 @@ def read_alphagpt_init_pool(seed: int) -> List[Expression]:
 
 
 def build_parser() -> ExpressionParser:
-    return ExpressionParser(
-        Operators,
-        ignore_case=True,
-        non_positive_time_deltas_allowed=False,
-        additional_operator_mapping={
-            "Max": ["Greater"],
-            "Min": ["Less"],
-            "Delta": ["Sub"]
-        }
-    )
+    return repair_parser()
 
 
-def build_chat_client(log_dir: str) -> ChatClient:
+def build_chat_client(log_dir: str, model=DEFAULT_MODEL, seed=0, max_calls=1000) -> ChatClient:
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
     logger = get_logger("llm", os.path.join(log_dir, "llm.log"))
     return OpenAIClient(
-        client=OpenAI(),
+        client=OpenAI(max_retries=0),
+        model=model, seed=seed, max_calls=max_calls,
         config=ChatConfig(
             system_prompt=EXPLAIN_WITH_TEXT_DESC,
             logger=logger
@@ -103,6 +101,7 @@ class CustomCallback(BaseCallback):
         self.llm_every_n_steps = llm_every_n_steps
         self.chat_session = chat_session
         self._drop_rl_n = drop_rl_n
+        self.llm_updates = (hyperparameters or {}).get("llm_updates", 20)
         self.hyperparameters = hyperparameters or {}
         self.start_time = datetime.now()
         self.metrics_history: List[Dict[str, Any]] = []
@@ -237,6 +236,8 @@ class CustomCallback(BaseCallback):
         self.llm_use_count += 1
         
         assert self.chat_session is not None
+        if self.chat_session.repair_engine is not None:
+            self.chat_session.repair_engine.context = dict(phase="pool_refresh", ppo_timestep=n_steps)
         self.chat_session.client.reset()
         logger = self.chat_session.logger
         logger.debug(
@@ -251,7 +252,7 @@ class CustomCallback(BaseCallback):
             pre_llm_exprs = {str(self.pool.state['exprs'][i]) for i in range(self.pool.size)}
             
             self.pool.leave_only(remain)
-            self.chat_session.update_pool(self.pool)
+            self.chat_session.update_pool(self.pool, n_updates=self.llm_updates)
             
             # Track newly added alphas as LLM-generated for origin marking
             post_llm_exprs = {str(self.pool.state['exprs'][i]) for i in range(self.pool.size)}
@@ -259,6 +260,8 @@ class CustomCallback(BaseCallback):
             # Add to the set so they'll be marked as 'llm' origin when tracked
             self.llm_expr_strs.update(new_exprs)
             print(f"[DEBUG] Marked {len(new_exprs)} new alphas as LLM-generated")
+        except RuntimeError:
+            raise
         except Exception as e:
             logger.warning(f"LLM invocation failed due to {type(e)}: {str(e)}")
 
@@ -425,8 +428,22 @@ def run_single_experiment(
     feedback_loop: bool = False,
     feedback_iter: int = 3,
     feedback_mode: str = "full",
-    qlib_data_path: str = "~/.qlib/qlib_data/cn_data"
+    qlib_data_path: str = "~/.qlib/qlib_data/cn_data",
+    device: str = "auto",
+    repair_memory: str = "none",
+    memory_k: int = 1,
+    llm_model: str = DEFAULT_MODEL,
+    llm_max_calls: int = 1000,
+    llm_updates: int = 20,
+    data_profile: str = "paper",
+    output_dir: str = "./out/results"
 ):
+    if repair_memory != "none" and (not use_llm or not feedback_loop):
+        raise ValueError("Repair memory requires use_llm=True and feedback_loop=True")
+    if feedback_mode not in ("fix-only", "full", "improve-only"):
+        raise ValueError("Unsupported feedback_mode")
+    if llm_updates < 0 or steps <= 0 or llm_every_n_steps <= 0:
+        raise ValueError("Invalid training/update budget")
     reseed_everything(seed)
     initialize_qlib(qlib_data_path)
 
@@ -444,17 +461,17 @@ def run_single_experiment(
     Feedback loop enabled: {feedback_loop}
     Feedback iterations: {feedback_iter}""")
 
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
     # tag = "rlv2" if llm_add_subexpr == 0 else f"afs{llm_add_subexpr}aar1-5"
     tag = (
         "agpt" if alphagpt_init else
         "rl" if not use_llm else
         f"llm_d{drop_rl_n}"+ (f"_feedback{feedback_iter}_{feedback_mode}" if feedback_loop else ""))
     name_prefix = f"{instruments}_{pool_capacity}_{seed}_{timestamp}_{tag}"
-    save_path = os.path.join("./out/results", name_prefix)
+    save_path = os.path.join(output_dir, name_prefix + f"_memory-{repair_memory}")
     os.makedirs(save_path, exist_ok=True)
 
-    device = torch.device("cuda:0")
+    device = torch.device("cuda:0" if device == "auto" and torch.cuda.is_available() else "cpu" if device == "auto" else device)
     close = Feature(FeatureType.CLOSE)
     target = Ref(close, -20) / close - 1
 
@@ -466,15 +483,15 @@ def run_single_experiment(
             device=device
         )
 
-    segments = [
-        #HARLA  
-        ("2012-01-01", "2021-12-31"),
-        ("2022-01-01", "2022-06-30"),
-        ("2022-07-01", "2022-12-31"),
-        ("2023-01-01", "2023-06-30")
-    ]
+    segments = list(PROFILES[data_profile])
+    # Training targets must finish before held-out dates start (20-day horizon).
+    calendar = (Path(qlib_data_path).expanduser() / "calendars" / "day.txt").read_text().splitlines()
+    train_end = calendar[bisect_right(calendar, segments[0][1]) - 21]
+    segments[0] = (segments[0][0], train_end)
     datasets = [get_dataset(*s) for s in segments]
-    calculators = [QLibStockDataCalculator(d, target) for d in datasets]
+    calculators = [QLibStockDataCalculator(d, target,
+                  diagnostics_path=os.path.join(save_path, "runtime_train.jsonl") if i == 0 else None)
+                  for i, d in enumerate(datasets)]
 
     def build_pool(exprs: List[Expression]) -> LinearAlphaPool:
         pool = MseAlphaPool(
@@ -489,10 +506,15 @@ def run_single_experiment(
         return pool
 
     chat, inter, pool = None, None, build_pool([])
+    llm_alpha_stats = init_llm_alpha_stats()
+    engine = RepairEngine(build_parser(), mode=repair_memory,
+                          path=os.path.join(save_path, "repair_memory.jsonl"),
+                          k=memory_k, seed=seed, source_model=llm_model)
+    engine.context = dict(phase="initial_pool", ppo_timestep=0)
     if alphagpt_init:
         pool = build_pool(read_alphagpt_init_pool(seed))
     elif use_llm:
-        chat = build_chat_client(save_path)
+        chat = build_chat_client(save_path, llm_model, seed, llm_max_calls)
         
         # Initialize llm_alpha_stats that will be shared with both interaction types
         llm_alpha_stats = init_llm_alpha_stats()
@@ -501,20 +523,20 @@ def run_single_experiment(
         if feedback_loop:
             inter = FeedbackInteraction(
                 build_parser(), chat, build_pool,
-                calculator_train=calculators[0], calculators_test=calculators[1:],
+                calculator_train=calculators[0], calculators_test=[],
                 replace_k=llm_replace_n, forgetful=True,
                 feedback_iter=feedback_iter,
                 feedback_mode=feedback_mode,
-                llm_alpha_stats=llm_alpha_stats
+                llm_alpha_stats=llm_alpha_stats, repair_engine=engine
             )
         else:
             inter = DefaultInteraction(
                 build_parser(), chat, build_pool,
-                calculator_train=calculators[0], calculators_test=calculators[1:],
+                calculator_train=calculators[0], calculators_test=[],
                 replace_k=llm_replace_n, forgetful=True,
-                llm_alpha_stats=llm_alpha_stats
+                llm_alpha_stats=llm_alpha_stats, repair_engine=engine
             )
-        pool = inter.run()
+        pool = inter.run(n_updates=llm_updates)
         print(f"[DEBUG] LLM pool initialization complete, pool size: {pool.size}")
     else:
         llm_alpha_stats = init_llm_alpha_stats()
@@ -536,7 +558,17 @@ def run_single_experiment(
         'llm_replace_n': llm_replace_n,
         'drop_rl_n': drop_rl_n,
         'feedback_loop': feedback_loop,
-        'feedback_iter': feedback_iter
+        'feedback_iter': feedback_iter,
+        'feedback_mode': feedback_mode,
+        'repair_memory': repair_memory,
+        'memory_k': memory_k,
+        'llm_model': llm_model,
+        'llm_max_calls': llm_max_calls,
+        'llm_updates': llm_updates,
+        'data_profile': data_profile,
+        'segments': segments,
+        'qlib_data_path': os.path.abspath(os.path.expanduser(qlib_data_path)),
+        'device': str(device)
     }
     
     # Now create checkpoint_callback after inter is initialized
@@ -584,10 +616,27 @@ def run_single_experiment(
         callback=checkpoint_callback,
         tb_log_name=name_prefix,
     )
+    result = dict(hyperparameters=hyperparams,
+                  final_metrics=checkpoint_callback.metrics_history[-1],
+                  structural_metrics=engine.summary(),
+                  training_runtime_errors=dict(calculators[0].runtime_errors),
+                  llm_refreshes=checkpoint_callback.llm_use_count,
+                  llm_usage=chat.usage if chat is not None else {},
+                  request_usage=chat.request_usage if chat is not None else [],
+                  save_path=save_path)
+    with open(os.path.join(save_path, "final.json"), "w") as handle:
+        json.dump(result, handle, indent=2)
+    with open(os.path.join(save_path, "repair_events.jsonl"), "w") as handle:
+        for event in engine.events:
+            handle.write(json.dumps(event) + "\n")
+    with open(os.path.join(save_path, "generations.jsonl"), "w") as handle:
+        for event in engine.generations:
+            handle.write(json.dumps(event) + "\n")
     
     # Print LLM alpha stats at end
     if use_llm and checkpoint_callback.llm_alpha_stats:
         print("\n" + "="*80)
+
         print("LLM ALPHA STATISTICS")
         print("="*80)
         stats = checkpoint_callback.llm_alpha_stats
@@ -601,6 +650,8 @@ def run_single_experiment(
                 print(f"  Valid %: {100*stats[kind]['valid']/total:.2f}%")
         print("\n" + "="*80)
 
+    return result
+
 
 def main(
     random_seeds: Union[int, Tuple[int]] = 0,
@@ -609,12 +660,21 @@ def main(
     alphagpt_init: bool = False,
     use_llm: bool = False,
     drop_rl_n: int = 5,
+    llm_replace_n: int = 3,
     steps: Optional[int] = None,
     llm_every_n_steps: int = 25000,
     feedback_loop: bool = False,
     feedback_iter: int = 3,
     feedback_mode: str = "full",
-    qlib_data_path: str = "~/.qlib/qlib_data/cn_data"
+    qlib_data_path: str = "~/.qlib/qlib_data/cn_data",
+    device: str = "auto",
+    repair_memory: str = "none",
+    memory_k: int = 1,
+    llm_model: str = DEFAULT_MODEL,
+    llm_max_calls: int = 1000,
+    llm_updates: int = 20,
+    data_profile: str = "paper",
+    output_dir: str = "./out/results"
 ):
     """
     :param random_seeds: Random seeds
@@ -645,12 +705,17 @@ def main(
             steps=default_steps[int(pool_capacity)] if steps is None else int(steps),
             alphagpt_init=alphagpt_init,
             drop_rl_n=drop_rl_n,
+            llm_replace_n=llm_replace_n,
             use_llm=use_llm,
             llm_every_n_steps=llm_every_n_steps,
             feedback_loop=feedback_loop,
             feedback_iter=feedback_iter,
             feedback_mode=feedback_mode,
-            qlib_data_path=qlib_data_path
+            qlib_data_path=qlib_data_path,
+            device=device,
+            repair_memory=repair_memory, memory_k=memory_k, llm_model=llm_model,
+            llm_max_calls=llm_max_calls, llm_updates=llm_updates,
+            data_profile=data_profile, output_dir=output_dir
         )
 
 

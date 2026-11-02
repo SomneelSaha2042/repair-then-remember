@@ -204,6 +204,9 @@ def call_critique_llm(chat_session, alpha_str: str, metrics: Dict[str, Any]) -> 
 
 def call_fixer_llm(chat_session, alpha_str: str, error_msg: str) -> str:
     """Call fixer LLM with error message context and reset chat session"""
+    engine = getattr(chat_session, "repair_engine", None)
+    if engine is not None:
+        return engine.repair(_get_client(chat_session), alpha_str, error_msg)
     prompt = get_fixer_prompt(alpha_str, error_msg)
     try:
         client = _get_client(chat_session)
@@ -251,6 +254,16 @@ def run_feedback_loop_on_alphas(
     """
     
     candidates = initial_alphas
+    if feedback_mode == "fix-only":
+        finals = []
+        for candidate in candidates:
+            text = str(candidate)
+            expr, error = safe_parse(parser, text)
+            if expr is None:
+                expr, _ = safe_parse(parser, call_fixer_llm(chat_session, text, error))
+            if expr is not None:
+                finals.append(expr)
+        return list({str(expr): expr for expr in finals}.values())
     print(f"[FEEDBACK LOOP] Starting with {len(candidates)} candidates in 'full' mode")
     
     # if feedback_mode == "fix-only":

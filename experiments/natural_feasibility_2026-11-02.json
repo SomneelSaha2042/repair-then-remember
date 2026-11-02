@@ -1,0 +1,37 @@
+{
+  "model": "gpt-4o-2024-11-20",
+  "date": "2026-11-02",
+  "experiment": "Natural generation validity feasibility check",
+  "api_calls": 24,
+  "requested_formulas": 600,
+  "returned_formulas": 600,
+  "unique_valid_formulas": 538,
+  "temperatures": [0.0, 0.7],
+  "formulas_per_temperature": 300,
+  "themes": 6,
+  "parser": {
+    "configuration": "Current HARLA-compatible parser with Max/Min/Delta aliases",
+    "valid": 600,
+    "invalid": 0
+  },
+  "secondary_posthoc_audit": {
+    "configuration": "Same parser without additional operator aliases",
+    "valid": 597,
+    "invalid": 3,
+    "failure": "Max used as a binary maximum instead of a rolling operator"
+  },
+  "prompt_tokens": 12748,
+  "completion_tokens": 9999,
+  "repair_replays_run": 0,
+  "why_no_replays": "No natural invalid expressions under the actual harness parser",
+  "market_data_sent": false,
+  "artifact_directory": "out/natural-repair/20261102_152819_355465",
+  "interpretation": "Repair memory has no observed opportunity to help in this sampled GPT-4o generation setting. This is a descriptive feasibility result, not evidence against repair memory across models or pool contexts.",
+  "limitations": [
+    "Theme-conditioned generation without current alpha-pool statistics",
+    "Two repeats per theme and temperature; expressions are not independent observations",
+    "Parser acceptance is distinct from numerical validity and financial quality",
+    "Strict-parser audit was posthoc and is not the configured HARLA comparison",
+    "No PPO or financial backtesting result"
+  ]
+}

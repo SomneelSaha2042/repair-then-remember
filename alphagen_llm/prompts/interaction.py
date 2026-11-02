@@ -94,7 +94,8 @@ class DefaultInteraction(InterativeSession):
         no_actual_weights: bool = False,
         also_report_history: bool = False,
         on_pool_update: Optional[Callable[[DefaultReport, int], None]] = None,
-        llm_alpha_stats: Optional[Dict[str, Any]] = None
+        llm_alpha_stats: Optional[Dict[str, Any]] = None,
+        repair_engine=None
     ):
         """
         no_actual_weights: Do not output the actual weights of the alphas in the prompt, just sort them.
@@ -109,6 +110,7 @@ class DefaultInteraction(InterativeSession):
         self._on_pool_update = on_pool_update or (lambda r, i: None)
         self._reports: List[DefaultReport] = []
         self._llm_alpha_stats = llm_alpha_stats
+        self.repair_engine = repair_engine
 
     @property
     def reports(self) -> List[DefaultReport]: return self._reports
@@ -163,8 +165,8 @@ class DefaultInteraction(InterativeSession):
         replace_prompt = REPLACE.format(alpha_phrase(replaced_count, "more"))
         exprs = self._chat_and_parse(prefix + report_str + replace_prompt)
         if len(exprs) == 0:
-            if self._forgetful:    # If using "forgetful" strategy, just reset the client and try again
-                return self._update(iter, pool)
+            if self._forgetful:
+                self._client.reset()
             retry = ("Your answer seems to be formatted incorrectly, or that all the alphas you generated are invalid. "
                      "Please follow the instructions carefully, output an alpha per line *without numbering and metrics and anything else*! "
                      f"Try again and generate {alpha_phrase(replaced_count)} again, following the instructions.")
@@ -179,6 +181,8 @@ class DefaultInteraction(InterativeSession):
     
     def _chat_and_parse(self, prompt: str) -> List[Expression]:
         lines = self._client.chat_complete(prompt)
+        if self.repair_engine is not None:
+            return self._process_candidates(lines, repair=False)
         exprs, invalid = safe_parse_list(lines.split('\n'), self._parser)
         if len(invalid) != 0:
             self._client.log_message(("script", f"Invalid expressions: {invalid}"))
@@ -188,6 +192,17 @@ class DefaultInteraction(InterativeSession):
                 record_llm_alpha(self._llm_alpha_stats, 'original', valid=True, fixed=False, expr=expr)
             for expr in invalid:
                 record_llm_alpha(self._llm_alpha_stats, 'original', valid=False, fixed=False, expr=expr)
+        return exprs
+
+    def _process_candidates(self, lines, repair):
+        exprs = self.repair_engine.process(lines, self._client, repair=repair)
+        if self._llm_alpha_stats is not None:
+            counts = self.repair_engine.counts
+            stats = self._llm_alpha_stats['original']
+            stats['valid'] = counts['initial_valid']
+            stats['invalid'] = counts['initial_candidates'] - counts['initial_valid']
+            stats['fixed'] = counts['repair_successes']
+            stats['complexity'].extend(len(str(expr)) for expr in exprs)
         return exprs
 
     def _parse_and_add(self, prompt: str, pool: LinearAlphaPool) -> bool:
