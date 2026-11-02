@@ -129,17 +129,32 @@ The credentials remain separate from Git and are never committed. Use your
 existing interactive SSH authentication. If the destination directory already
 exists, inspect it before cloning or updating it.
 
-On a login node, create a user-owned environment (no sudo):
+On a login node, create a user-owned environment (no sudo). The `xlogin1`
+storage probe failed after about 9 MiB in `/tmp` despite free filesystem space,
+so use a private temporary directory in home. Home must have several gigabytes
+available for CUDA packages; the 32 MiB write probe does not establish that.
+Disabling pip's cache avoids keeping another copy of downloaded wheels.
+The block stops on the first failed command:
 
 ```bash
+(
+set -e
 python3 -m venv ~/.venvs/alphagen
 source ~/.venvs/alphagen/bin/activate
-python -m pip install --upgrade pip
-python -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu126
-python -m pip install -r requirements-cluster.txt
+export TMPDIR="$HOME/.tmp/alphagen"
+mkdir -p "$TMPDIR"
+chmod 700 "$TMPDIR"
+python -c 'import os, tempfile; assert os.path.samefile(tempfile.gettempdir(), os.environ["TMPDIR"]); print("Temporary directory:", tempfile.gettempdir())'
+python -m pip install --no-cache-dir --upgrade pip
+python -m pip install --no-cache-dir torch==2.11.0 --index-url https://download.pytorch.org/whl/cu126
+python -m pip install --no-cache-dir -r requirements-cluster.txt
+python -c 'import torch, openai, qlib, sb3_contrib; print("Torch:", torch.__version__)'
 python -m pip check
 python -m unittest discover -s tests -v
+)
 ```
+
+Both Slurm scripts set the same home-based temporary directory on compute nodes.
 
 The CUDA 12.6 wheel is chosen for the Titan V's Volta architecture. The original
 `requirements.txt` is a broad environment freeze containing nightly CUDA 12.8

@@ -10,6 +10,9 @@
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR}"
 source "$HOME/.venvs/alphagen/bin/activate"
+export TMPDIR="$HOME/.tmp/alphagen"
+mkdir -p "$TMPDIR"
+chmod 700 "$TMPDIR"
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 conditions=(harla repair memory)
