@@ -7,6 +7,8 @@ playground*.py
 /data/
 # Curated summaries belong in experiments/; raw outputs stay local.
 /out/
+/repair-pilot-*.log
+/repair-memory-*.log
 logs/
 tb_logs/
 get_baostock_data.ipynb

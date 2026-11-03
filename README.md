@@ -210,9 +210,11 @@ and the [GPT-4o model card](https://developers.openai.com/api/docs/models/gpt-4o
 
 ### Run sequence
 
-The next hybrid-system pilot uses one seed, the actual CSI300 data, and 51,200
-PPO steps per condition. With 2,048-step rollouts, periodic LLM refreshes occur
-at 25,600 and 51,200 steps. Keep the existing 15-token PPO construction limit
+The hybrid-system pilot uses one seed, the actual CSI300 data, and 51,200
+PPO steps per condition. With 2,048-step rollouts, the 25,000-step interval
+triggers a periodic LLM refresh at 26,624 steps. The next refresh is due at
+53,248 steps, so this pilot has one periodic refresh after initialization.
+Keep the existing 15-token PPO construction limit
 and all original grammar rules for comparability; the GPU does not itself make
 LLM formulas longer. The job array runs HARLA, repair, and repair-memory one at
 a time, with 20 inner pool updates per invocation:
