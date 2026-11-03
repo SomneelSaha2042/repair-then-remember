@@ -68,9 +68,9 @@ def inspect_generations(batches):
                 unique_invalid=len(failures)), failures
 
 
-def replay(factory, root, mode, seed, cases):
+def replay(factory, root, mode, seed, cases, temperature=0.0):
     directory = root / f"{mode}_order{seed}"
-    client = factory(directory, max(1, len(cases)), seed, 0.0)
+    client = factory(directory, max(1, len(cases)), seed, temperature)
     engine = RepairEngine(build_parser(), mode, directory / "repair_memory.jsonl",
                           seed=seed, source_model=client.model)
     ordered = list(cases)

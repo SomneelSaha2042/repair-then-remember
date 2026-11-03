@@ -304,6 +304,20 @@ python -m scripts.repair_replay path/to/generations.jsonl --mode nearest --outpu
 python -m scripts.repair_replay path/to/generations.jsonl --mode random --output out/replay-random
 ```
 
+For a paired four-condition replay over three fixed stream orders, supply a JSON
+list of observed failures, each containing `case_id` and `expression`:
+
+```bash
+python -m scripts.replay_repairs --cases path/to/failures.json --output out/repair-replay/fixed-corpus
+```
+
+This uses `gpt-4o-mini-2024-07-18` at temperature 1, one repair call per case,
+and empty memory for every condition/order. A 25-case corpus therefore makes
+300 calls. Historical repaired answers in the input are discarded. Results
+separate formatting-only failures, report a zero-call formatting-normalization
+baseline, and compare paired successes, failures and token usage. Conditions
+share cases and call budgets; prompt-token counts are measured rather than matched.
+
 Use a new output directory per run. For source→target transfer, supply
 `--memory-input path/to/source/repair_memory.jsonl --model TARGET_MODEL`; use a
 disjoint target corpus and record source provenance. Generation-time memory,
