@@ -65,6 +65,7 @@ class OpenAIClient(ChatClient):
         self._add_message("assistant", result)
         self.request_usage.append(dict(
             call=self.usage["calls"], model=response.model if hasattr(response, "model") else self._model,
+            temperature=self.temperature, seed=self.seed, max_tokens=self.max_tokens,
             prompt_tokens=response.usage.prompt_tokens if response.usage else None,
             completion_tokens=response.usage.completion_tokens if response.usage else None,
             latency_seconds=time.monotonic() - started,

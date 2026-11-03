@@ -223,6 +223,17 @@ a time, with 20 inner pool updates per invocation:
 sbatch scripts/cluster_pilot.sbatch
 ```
 
+To repeat the three-arm pilot with GPT-4o mini at temperature 1, run:
+
+```bash
+sbatch --array=0-2%3 scripts/cluster_pilot.sbatch --model gpt-4o-mini-2024-07-18 --temperature 1
+```
+
+All three arms receive the same decoding settings for generation and repair.
+The array ID gives the repeat a separate output directory. The comparison
+configuration, training hyperparameters, and per-request usage record temperature
+explicitly. The default temperature remains 0 for earlier commands.
+
 Submit from the repository root after installing dependencies, extracting data,
 and configuring the API key. Each array task requests up to three hours; actual
 runtime is not yet measured. To check only HARLA first, use `sbatch --array=0

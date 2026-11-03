@@ -65,12 +65,12 @@ def build_parser() -> ExpressionParser:
     return repair_parser()
 
 
-def build_chat_client(log_dir: str, model=DEFAULT_MODEL, seed=0, max_calls=1000) -> ChatClient:
+def build_chat_client(log_dir: str, model=DEFAULT_MODEL, seed=0, max_calls=1000, temperature=0.0) -> ChatClient:
     load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
     logger = get_logger("llm", os.path.join(log_dir, "llm.log"))
     return OpenAIClient(
         client=OpenAI(max_retries=0),
-        model=model, seed=seed, max_calls=max_calls,
+        model=model, seed=seed, max_calls=max_calls, temperature=temperature,
         config=ChatConfig(
             system_prompt=EXPLAIN_WITH_TEXT_DESC,
             logger=logger
@@ -433,6 +433,7 @@ def run_single_experiment(
     repair_memory: str = "none",
     memory_k: int = 1,
     llm_model: str = DEFAULT_MODEL,
+    llm_temperature: float = 0.0,
     llm_max_calls: int = 1000,
     llm_updates: int = 20,
     data_profile: str = "paper",
@@ -444,6 +445,8 @@ def run_single_experiment(
         raise ValueError("Unsupported feedback_mode")
     if llm_updates < 0 or steps <= 0 or llm_every_n_steps <= 0:
         raise ValueError("Invalid training/update budget")
+    if not 0.0 <= llm_temperature <= 2.0:
+        raise ValueError("llm_temperature must be between 0 and 2")
     reseed_everything(seed)
     initialize_qlib(qlib_data_path)
 
@@ -455,6 +458,8 @@ def run_single_experiment(
     Total Iteration Steps: {steps}
     AlphaGPT-Like Init-Only LLM Usage: {alphagpt_init}
     Use LLM: {use_llm}
+    LLM model: {llm_model}
+    LLM temperature: {llm_temperature}
     Invoke LLM every N steps: {llm_every_n_steps}
     Replace N alphas with LLM: {llm_replace_n}
     Drop N alphas before LLM: {drop_rl_n}
@@ -514,7 +519,7 @@ def run_single_experiment(
     if alphagpt_init:
         pool = build_pool(read_alphagpt_init_pool(seed))
     elif use_llm:
-        chat = build_chat_client(save_path, llm_model, seed, llm_max_calls)
+        chat = build_chat_client(save_path, llm_model, seed, llm_max_calls, temperature=llm_temperature)
         
         # Initialize llm_alpha_stats that will be shared with both interaction types
         llm_alpha_stats = init_llm_alpha_stats()
@@ -563,6 +568,7 @@ def run_single_experiment(
         'repair_memory': repair_memory,
         'memory_k': memory_k,
         'llm_model': llm_model,
+        'llm_temperature': llm_temperature,
         'llm_max_calls': llm_max_calls,
         'llm_updates': llm_updates,
         'data_profile': data_profile,
@@ -671,6 +677,7 @@ def main(
     repair_memory: str = "none",
     memory_k: int = 1,
     llm_model: str = DEFAULT_MODEL,
+    llm_temperature: float = 0.0,
     llm_max_calls: int = 1000,
     llm_updates: int = 20,
     data_profile: str = "paper",
@@ -714,6 +721,7 @@ def main(
             qlib_data_path=qlib_data_path,
             device=device,
             repair_memory=repair_memory, memory_k=memory_k, llm_model=llm_model,
+            llm_temperature=llm_temperature,
             llm_max_calls=llm_max_calls, llm_updates=llm_updates,
             data_profile=data_profile, output_dir=output_dir
         )

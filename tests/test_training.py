@@ -43,13 +43,16 @@ class TrainingTests(unittest.TestCase):
             for feedback, memory in ((False, "none"), (True, "none"), (True, "nearest")):
                 client = ScriptedClient()
                 with patch("scripts.rl.initialize_qlib"), patch("scripts.rl.StockData", side_effect=synthetic_data), \
-                     patch("scripts.rl.build_chat_client", return_value=client), \
+                     patch("scripts.rl.build_chat_client", return_value=client) as build_client, \
                      patch("scripts.rl.MaskablePPO", side_effect=short_ppo):
                     result = run_single_experiment(
                         pool_capacity=3, steps=64, use_llm=True, feedback_loop=feedback,
                         feedback_mode="fix-only", repair_memory=memory, llm_updates=1,
                         llm_every_n_steps=32, drop_rl_n=1, llm_replace_n=1,
+                        llm_model="gpt-4o-mini-2024-07-18", llm_temperature=1.0,
                         qlib_data_path=str(root), device="cpu", output_dir=str(root / "runs"))
+                build_client.assert_called_once_with(result["save_path"], "gpt-4o-mini-2024-07-18", 0, 1000, temperature=1.0)
+                self.assertEqual(result["hyperparameters"]["llm_temperature"], 1.0)
                 self.assertEqual(result["final_metrics"]["timestep"], 64)
                 saved = Path(result["save_path"]) / "final.json"
                 self.assertEqual(json.loads(saved.read_text())["structural_metrics"]["mode"], memory)

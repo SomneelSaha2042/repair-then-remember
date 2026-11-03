@@ -30,10 +30,13 @@ def main():
     parser.add_argument("--llm-max-calls", type=int, default=1000)
     parser.add_argument("--memory-k", type=int, default=1)
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--output", default="out/comparisons")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    if not 0.0 <= args.temperature <= 2.0:
+        parser.error("--temperature must be between 0 and 2")
     if not Path(args.data).expanduser().is_dir():
         parser.error("--data must be an extracted Qlib directory")
     manifest = inspect_data(args.data, args.profile)
@@ -53,6 +56,7 @@ def main():
                        "--drop_rl_n=5", "--llm_replace_n=5", f"--steps={args.steps}", "--llm_every_n_steps=25000",
                        f"--qlib_data_path={manifest['path']}", f"--data_profile={args.profile}",
                        f"--device={args.device}", f"--llm_model={args.model}",
+                       f"--llm_temperature={args.temperature}",
                        f"--llm_max_calls={args.llm_max_calls}", f"--llm_updates={args.llm_updates}",
                        f"--memory_k={args.memory_k}", f"--output_dir={directory}"]
             command += [f"--{key}={value}" for key, value in CONDITIONS[condition].items()]
