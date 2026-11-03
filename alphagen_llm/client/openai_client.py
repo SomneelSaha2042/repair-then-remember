@@ -68,6 +68,8 @@ class OpenAIClient(ChatClient):
             prompt_tokens=response.usage.prompt_tokens if response.usage else None,
             completion_tokens=response.usage.completion_tokens if response.usage else None,
             latency_seconds=time.monotonic() - started,
+            finish_reason=getattr(response.choices[0], "finish_reason", None),
+            system_fingerprint=getattr(response, "system_fingerprint", None),
         ))
         return result
 
